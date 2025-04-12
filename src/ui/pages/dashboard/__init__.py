@@ -16,14 +16,157 @@ def render_dashboard_page():
     """Render the main dashboard page."""
     st.title("Dashboard")
     
+    # Generate demo data for testing
+    demo_data = {
+        "metrics": {
+            "total_leads": 120,
+            "lead_to_appointment": 0.32,
+            "lead_to_sale": 0.15,
+            "appointment_to_sale": 0.45,
+            "lead_sources": {
+                "Website": 45,
+                "Phone": 32,
+                "Walk-in": 18,
+                "Referral": 15,
+                "Social Media": 10
+            },
+            "rep_performance": {
+                "John Smith": 35,
+                "Jane Doe": 32,
+                "Bob Johnson": 28,
+                "Alice Brown": 25
+            },
+            "total_inventory": 85,
+            "avg_days_in_stock": 42,
+            "aged_inventory_count": 18,
+            "aged_inventory_pct": 0.21,
+            "make_distribution": {
+                "Toyota": 22,
+                "Honda": 18,
+                "Ford": 15,
+                "Chevrolet": 12,
+                "Nissan": 8,
+                "BMW": 6,
+                "Mercedes": 4
+            },
+            "new_used_distribution": {
+                "New": 35,
+                "Used": 50
+            },
+            "total_sessions": 2500,
+            "total_users": 1800,
+            "srp_to_vdp_ratio": 0.65,
+            "page_views": {
+                "/": 1200,
+                "/inventory": 950,
+                "/new-vehicles": 450,
+                "/used-vehicles": 400,
+                "/vehicle/honda-accord-a12345": 120,
+                "/vehicle/toyota-camry-b67890": 110,
+                "/vehicle/ford-f150-c24680": 105,
+                "/finance": 350,
+                "/service": 300,
+                "/contact": 200
+            },
+            "top_pages": {
+                "/": 1200,
+                "/inventory": 950,
+                "/new-vehicles": 450,
+                "/used-vehicles": 400,
+                "/vehicle/honda-accord-a12345": 120
+            }
+        },
+        "previous_metrics": {
+            "total_leads": 105,
+            "lead_to_appointment": 0.28,
+            "lead_to_sale": 0.12,
+            "appointment_to_sale": 0.42,
+            "total_inventory": 78,
+            "avg_days_in_stock": 38,
+            "aged_inventory_count": 14,
+            "aged_inventory_pct": 0.18,
+            "total_sessions": 2200,
+            "total_users": 1600,
+            "srp_to_vdp_ratio": 0.58
+        },
+        "anomalies": [
+            {
+                "metric": "lead_to_sale",
+                "current_value": 0.15,
+                "previous_value": 0.12,
+                "change": 0.03,
+                "percent_change": 0.25,
+                "direction": "increased",
+                "severity": "high"
+            },
+            {
+                "metric": "srp_to_vdp_ratio",
+                "current_value": 0.65,
+                "previous_value": 0.58,
+                "change": 0.07,
+                "percent_change": 0.12,
+                "direction": "increased",
+                "severity": "medium"
+            },
+            {
+                "metric": "aged_inventory_pct",
+                "current_value": 0.21,
+                "previous_value": 0.18,
+                "change": 0.03,
+                "percent_change": 0.17,
+                "direction": "increased",
+                "severity": "medium"
+            }
+        ],
+        "scorecard": {
+            "lead_to_sale": {
+                "value": 0.15,
+                "benchmark": 0.12,
+                "grade": "B",
+                "diff_pct": 0.25
+            },
+            "appointment_to_sale": {
+                "value": 0.45,
+                "benchmark": 0.40,
+                "grade": "B",
+                "diff_pct": 0.125
+            },
+            "avg_days_in_stock": {
+                "value": 42,
+                "benchmark": 35,
+                "grade": "D",
+                "diff_pct": -0.2
+            },
+            "aged_inventory_pct": {
+                "value": 0.21,
+                "benchmark": 0.15,
+                "grade": "F",
+                "diff_pct": -0.4
+            },
+            "srp_to_vdp_ratio": {
+                "value": 0.65,
+                "benchmark": 0.55,
+                "grade": "A",
+                "diff_pct": 0.18
+            }
+        },
+        "date_range": {
+            "start": "2023-04-01",
+            "end": "2023-04-07"
+        }
+    }
+    
     # Create tabs for different dashboard views
-    tab1, tab2 = st.tabs(["Metrics", "Insights"])
+    tab1, tab2, tab3 = st.tabs(["Overview", "Metrics", "Insights"])
     
     with tab1:
-        render_metrics_dashboard()
+        render_overview_tab(demo_data)
     
     with tab2:
-        render_insights_dashboard()
+        render_metrics_dashboard(demo_data)
+    
+    with tab3:
+        render_insights_dashboard(demo_data)
 
 def render_overview_tab(digest_data, storage_service=None):
     """Render the overview tab with key metrics and charts."""

@@ -4,6 +4,7 @@ Prompts for Claude API interactions in Watchdog AI.
 This module contains prompt templates for various Claude interactions.
 """
 from typing import Dict, List, Any, Optional
+import json
 
 
 def get_data_analysis_prompt(summary: Dict[str, Any], samples: Dict[str, List[Any]]) -> str:
@@ -238,6 +239,127 @@ def get_digest_prompt(data: Dict[str, Any], timeframe: str = "week") -> Dict[str
     {chr(10).join(datasets_summary)}
     
     Focus on actionable insights and notable patterns. What should the dealership manager pay attention to?
+    """
+    
+    return {
+        "system": system_prompt,
+        "user": user_prompt
+    }
+
+
+def get_anomaly_detection_prompt(data: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Get prompts for anomaly detection.
+    
+    Args:
+        data: The data to analyze for anomalies
+        
+    Returns:
+        dict: System and user prompts
+    """
+    system_prompt = """
+    You are an automotive dealership data expert specializing in anomaly detection.
+    Your task is to analyze the provided dealership metrics and identify significant
+    changes or anomalies that could require management attention.
+    
+    Focus on:
+    1. Metrics that have changed significantly from the previous period
+    2. Values that are outside the expected range for the industry
+    3. Unusual patterns or relationships between different metrics
+    
+    For each anomaly detected, indicate:
+    - The metric name
+    - The current and previous values
+    - The percentage change
+    - The severity (high, medium, low)
+    - Whether this change is positive or negative for the business
+    - A brief explanation of why this change is notable
+    """
+    
+    # Format the metrics data
+    metrics = data.get("metrics", {})
+    previous = data.get("previous_metrics", {})
+    
+    user_prompt = f"""
+    Please analyze these dealership metrics and identify significant changes or anomalies:
+    
+    ## Current Period Metrics
+    {json.dumps(metrics, indent=2)}
+    
+    ## Previous Period Metrics
+    {json.dumps(previous, indent=2)}
+    
+    Focus on metrics that have changed by more than 10% or are significantly outside industry norms.
+    Format your response as a list of detected anomalies, with each anomaly containing:
+    - metric: The name of the metric
+    - current_value: The current value
+    - previous_value: The previous value
+    - percent_change: The percentage change
+    - direction: Whether it increased or decreased
+    - severity: High, medium, or low
+    - is_concern: Whether this is concerning or positive
+    - explanation: A brief explanation of why this is notable
+    """
+    
+    return {
+        "system": system_prompt,
+        "user": user_prompt
+    }
+
+
+def get_scorecard_prompt(data: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Get prompts for scorecard generation.
+    
+    Args:
+        data: The data to analyze for scorecard
+        
+    Returns:
+        dict: System and user prompts
+    """
+    system_prompt = """
+    You are an automotive dealership data expert creating a performance scorecard.
+    Your task is to evaluate the dealership's key metrics against industry benchmarks
+    and assign grades (A, B, C, D, F) based on performance.
+    
+    Grading scale:
+    - A: Exceptional (>20% better than benchmark)
+    - B: Above average (5-20% better than benchmark)
+    - C: Average (within 5% of benchmark)
+    - D: Below average (5-20% worse than benchmark)
+    - F: Poor (>20% worse than benchmark)
+    
+    For each metric evaluated, provide:
+    - The metric name
+    - The current value
+    - The benchmark value
+    - The grade
+    - The percentage difference from benchmark
+    - A brief comment on performance
+    """
+    
+    # Format the metrics data
+    metrics = data.get("metrics", {})
+    benchmarks = data.get("benchmarks", {})
+    
+    user_prompt = f"""
+    Please evaluate these dealership metrics against industry benchmarks:
+    
+    ## Current Metrics
+    {json.dumps(metrics, indent=2)}
+    
+    ## Industry Benchmarks
+    {json.dumps(benchmarks, indent=2)}
+    
+    For each metric, assign a grade (A, B, C, D, F) based on how the dealership
+    is performing compared to the benchmark. Format your response as a scorecard
+    with each metric containing:
+    - metric: The name of the metric
+    - value: The current value
+    - benchmark: The benchmark value
+    - grade: The assigned grade (A-F)
+    - diff_pct: The percentage difference from benchmark
+    - comment: A brief assessment of performance
     """
     
     return {

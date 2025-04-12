@@ -12,10 +12,53 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent.parent
 ASSETS_DIR = BASE_DIR / "assets"
 DATA_DICTIONARY_PATH = ASSETS_DIR / "data_dictionary.json"
+SAMPLE_DATA_DIR = ASSETS_DIR / "sample_data"
 
 # App settings
 APP_NAME = os.getenv("APP_NAME", "Watchdog AI")
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
+
+# AI settings
+AI_CONFIG = {
+    "model": os.getenv("CLAUDE_MODEL", "claude-3-opus-20240229"),
+    "max_tokens": int(os.getenv("MAX_TOKENS", "4096")),
+    "temperature": 0.2
+}
+
+# Email settings
+EMAIL_CONFIG = {
+    "sendgrid_api_key": os.getenv("SENDGRID_API_KEY"),
+    "notification_email": os.getenv("NOTIFICATION_EMAIL", "notifications@yourdomain.com"),
+    "enable_notifications": os.getenv("ENABLE_NOTIFICATIONS", "false").lower() in ("true", "1", "t")
+}
+
+# Supabase settings
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+UPLOAD_BUCKET_NAME = os.getenv("UPLOAD_BUCKET_NAME", "watchdog-uploads")
+PARSED_DATA_BUCKET_NAME = os.getenv("PARSED_DATA_BUCKET_NAME", "watchdog-parsed-data")
+
+# Database settings
+DB_CONFIG = {
+    "enable_supabase": os.getenv("ENABLE_SUPABASE", "false").lower() in ("true", "1", "t"),
+    "supabase_url": SUPABASE_URL,
+    "supabase_key": SUPABASE_KEY,
+    "upload_bucket": UPLOAD_BUCKET_NAME,
+    "parsed_data_bucket": PARSED_DATA_BUCKET_NAME
+}
+
+# File processing settings
+FILE_PROCESSING = {
+    "max_file_size_mb": int(os.getenv("MAX_UPLOAD_SIZE_MB", 50)),
+    "allowed_extensions": {
+        ".csv": "text/csv",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel",
+        ".pdf": "application/pdf",
+        ".txt": "text/plain"
+    },
+    "enable_pdf_processing": True
+}
 
 # UI Configuration
 UI_CONFIG = {
@@ -34,7 +77,10 @@ def get_config():
         "base_dir": str(BASE_DIR),
         "assets_dir": str(ASSETS_DIR),
         "data_dictionary_path": str(DATA_DICTIONARY_PATH),
-        "ui": UI_CONFIG
+        "ui": UI_CONFIG,
+        "ai": AI_CONFIG,
+        "email": EMAIL_CONFIG,
+        "file_processing": FILE_PROCESSING
     }
 
 def validate_config():

@@ -24,7 +24,16 @@ from src.ui.pages.dashboard.insights import render_insights_dashboard
 try:
     validate_config()
 except Exception as e:
-    st.error(f"Configuration error: {str(e)}")
+    # User-friendly error message
+    st.error("⚠️ Configuration Error")
+    
+    # Show different messages based on DEBUG mode
+    if DEBUG:
+        st.error(f"Detailed error: {str(e)}")
+        st.info("Please check your environment variables and .env file.")
+    else:
+        st.error("There was an issue loading the application configuration. Please contact support.")
+    
     st.stop()
 
 # App setup
@@ -102,7 +111,16 @@ with st.sidebar:
 
 # Check if data dictionary exists
 if not Path(DATA_DICTIONARY_PATH).exists():
-    st.error(f"Data dictionary not found at {DATA_DICTIONARY_PATH}")
+    # User-friendly error message
+    st.error("⚠️ Missing Data Dictionary")
+    
+    # Show different messages based on DEBUG mode
+    if DEBUG:
+        st.error(f"Data dictionary not found at {DATA_DICTIONARY_PATH}")
+        st.info("Please make sure the assets directory contains a valid data_dictionary.json file.")
+    else:
+        st.error("An essential configuration file is missing. Please contact support.")
+    
     st.stop()
 
 # Routing based on user selection
@@ -116,12 +134,37 @@ elif page == "Dashboard":
     render_dashboard_page()
 
 if __name__ == "__main__":
+    # Debug information only shown in debug mode and with an explicit toggle
     if DEBUG:
-        st.write("Debug information:")
-        config = get_config()
-        # Remove sensitive information before displaying
-        if "api_keys" in config:
-            for key in config["api_keys"]:
-                if config["api_keys"][key]:
-                    config["api_keys"][key] = "****"
-        st.json(config)
+        with st.sidebar.expander("Developer Tools", expanded=False):
+            show_debug = st.checkbox("Show Debug Information", value=False)
+            if show_debug:
+                st.write("Debug Information (Sensitive data redacted)")
+                config = get_config()
+                
+                # Remove ALL sensitive information
+                redacted_config = config.copy()
+                
+                # Redact paths
+                for path_key in ["base_dir", "assets_dir", "data_dictionary_path"]:
+                    if path_key in redacted_config:
+                        redacted_config[path_key] = "[REDACTED PATH]"
+                
+                # Redact all API keys and credentials
+                if "api_keys" in redacted_config:
+                    for key in redacted_config["api_keys"]:
+                        redacted_config["api_keys"][key] = "****"
+                
+                # Redact email addresses
+                if "email" in redacted_config:
+                    for key in redacted_config["email"]:
+                        if "email" in key.lower():
+                            redacted_config["email"][key] = "****@****.com"
+                
+                # Redact DB credentials
+                if "db" in redacted_config:
+                    for key in ["supabase_url", "supabase_key"]:
+                        if key in redacted_config["db"]:
+                            redacted_config["db"][key] = "****"
+                
+                st.json(redacted_config)

@@ -1,0 +1,4 @@
+created_date,modified_date,lead_source,lead_type,salesperson_name,customer_id,first_name,last_name,email,phone,vin,make,model,year,deal_status,gross_profit
+2024-03-01,2024-03-01,Website,New,John Smith,CUST001,Jane,Doe,jane.doe@email.com,555-0101,1HGCM82633A123456,Honda,Accord,2023,Active,2500
+2024-03-02,2024-03-02,Facebook,Used,Mike Johnson,CUST002,Bob,Wilson,bob.wilson@email.com,555-0102,5YJSA1E29HF000001,Tesla,Model S,2022,Pending,3500
+2024-03-03,2024-03-03,Referral,New,Sarah Davis,CUST003,Alice,Brown,alice.brown@email.com,555-0103,WDDUG7JB0FA123456,Mercedes-Benz,C-Class,2024,Closed,4200

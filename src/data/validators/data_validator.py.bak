@@ -1,0 +1,968 @@
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, Optional, Tuple
+from ..template_mapper import TemplateMapper
+
+
+class DataValidator:
+    """Validates and checks data quality in dealership dataframes"""
+    
+    def __init__(self, mapper: Optional[TemplateMapper] = None):
+        """
+        Initialize the data validator
+        
+        Args:
+            mapper: Optional TemplateMapper for field categorization
+        """
+        self.mapper = mapper or TemplateMapper()
+        
+        # Common data quality checks
+        self.checks = {
+            "missing_values": self._check_missing_values,
+            "duplicate_rows": self._check_duplicate_rows,
+            "date_ranges": self._check_date_ranges,
+            "numeric_ranges": self._check_numeric_ranges,
+            "required_fields": self._check_required_fields,
+            "format_consistency": self._check_format_consistency,
+            "data_type_consistency": self._check_data_type_consistency,
+            "distribution_analysis": self._check_distribution_analysis
+        }
+    
+    def validate(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Run all validation checks on a dataframe
+        
+        Args:
+            df: DataFrame to validate
+            
+        Returns:
+            Dict with validation results
+        """
+        results = {
+            "is_valid": True,
+            "issues": [],
+            "warnings": [],
+            "check_results": {}
+        }
+        
+        # Run all checks
+        for check_name, check_func in self.checks.items():
+            check_result = check_func(df)
+            results["check_results"][check_name] = check_result
+            
+            # If the check found critical issues
+            if not check_result.get("valid", True):
+                results["is_valid"] = False
+                results["issues"].extend(check_result.get("issues", []))
+            
+            # Add any warnings
+            if check_result.get("warnings"):
+                results["warnings"].extend(check_result.get("warnings", []))
+        
+        return results
+    
+    def _check_missing_values(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check for missing values in the dataframe
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        
+        # Calculate percentage of missing values per column
+        missing_pct = (df.isnull().sum() / len(df)) * 100
+        cols_with_missing = missing_pct[missing_pct > 0]
+        
+        if not cols_with_missing.empty:
+            result["missing_columns"] = cols_with_missing.to_dict()
+            
+            # Critical issue if any column has more than 20% missing
+            critical_missing = cols_with_missing[cols_with_missing > 20]
+            if not critical_missing.empty:
+                result["valid"] = False
+                for col, pct in critical_missing.items():
+                    result["issues"].append(f"Column '{col}' has {pct:.1f}% missing values")
+            
+            # Warnings for columns with less than 20% missing
+            warning_missing = cols_with_missing[cols_with_missing <= 20]
+            if not warning_missing.empty:
+                for col, pct in warning_missing.items():
+                    result["warnings"].append(f"Column '{col}' has {pct:.1f}% missing values")
+        
+        return result
+    
+    def _check_duplicate_rows(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check for duplicate rows in the dataframe
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        
+        # Count duplicates
+        duplicates = df.duplicated()
+        duplicate_count = duplicates.sum()
+        
+        if duplicate_count > 0:
+            duplicate_pct = (duplicate_count / len(df)) * 100
+            result["duplicate_count"] = int(duplicate_count)
+            result["duplicate_percentage"] = float(duplicate_pct)
+            
+            # Critical issue if more than 5% duplicates
+            if duplicate_pct > 5:
+                result["valid"] = False
+                result["issues"].append(f"High number of duplicate rows: {duplicate_count} ({duplicate_pct:.1f}%)")
+            else:
+                result["warnings"].append(f"Found {duplicate_count} duplicate rows ({duplicate_pct:.1f}%)")
+        
+        return result
+    
+    def _check_date_ranges(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check that date columns have reasonable ranges
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        
+        # Get date columns using mapper
+        date_columns = [col for col in df.columns 
+                      if self.mapper.get_field_category(col) == "date_fields"]
+        
+        # Convert columns to datetime if not already
+        date_info = {}
+        for col in date_columns:
+            try:
+                date_series = pd.to_datetime(df[col], errors='coerce')
+                non_null = date_series.dropna()
+                
+                # Skip if no valid dates
+                if len(non_null) == 0:
+                    continue
+                    
+                # Get min and max dates
+                min_date = non_null.min()
+                max_date = non_null.max()
+                date_info[col] = {
+                    "min": min_date,
+                    "max": max_date,
+                    "range_days": (max_date - min_date).days
+                }
+                
+                # Check for dates in the far future (more than 2 years ahead)
+                future_cutoff = pd.Timestamp.now() + pd.DateOffset(years=2)
+                future_dates = (date_series > future_cutoff).sum()
+                if future_dates > 0:
+                    pct_future = (future_dates / len(non_null)) * 100
+                    if pct_future > 5:  # Critical if >5% dates are too far in future
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {future_dates} dates more than 2 years in the future ({pct_future:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {future_dates} dates more than 2 years in the future"
+                        )
+                
+                # Check for dates in the distant past (more than 5 years ago)
+                past_cutoff = pd.Timestamp.now() - pd.DateOffset(years=5)
+                past_dates = (date_series < past_cutoff).sum()
+                if past_dates > 0:
+                    pct_past = (past_dates / len(non_null)) * 100
+                    if pct_past > 10:  # Critical if >10% dates are too far in past
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {past_dates} dates more than 5 years in the past ({pct_past:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {past_dates} dates more than 5 years in the past"
+                        )
+            
+            except Exception as e:
+                result["warnings"].append(f"Could not analyze dates in column '{col}': {str(e)}")
+        
+        result["date_info"] = date_info
+        return result
+    
+    def _check_numeric_ranges(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check that numeric columns have reasonable values
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        numeric_info = {}
+        
+        # Check numeric columns
+        numeric_columns = df.select_dtypes(include=['number']).columns
+        
+        for col in numeric_columns:
+            col_data = df[col].dropna()
+            if len(col_data) == 0:
+                continue
+                
+            # Get basic stats
+            stats = {
+                "min": float(col_data.min()),
+                "max": float(col_data.max()),
+                "mean": float(col_data.mean()),
+                "median": float(col_data.median()),
+                "std": float(col_data.std()),
+            }
+            numeric_info[col] = stats
+            
+            # Check for specific column types using category detection
+            col_lower = col.lower()
+            
+            # Price checks
+            if any(term in col_lower for term in ['price', 'cost', 'msrp']):
+                # Check for zero prices
+                zero_prices = (col_data == 0).sum()
+                if zero_prices > 0:
+                    pct_zero = (zero_prices / len(col_data)) * 100
+                    if pct_zero > 5:  # Critical if >5% are zero
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {zero_prices} zero values ({pct_zero:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {zero_prices} zero values"
+                        )
+                
+                # Check for very high prices (> $200,000)
+                high_prices = (col_data > 200000).sum()
+                if high_prices > 0:
+                    pct_high = (high_prices / len(col_data)) * 100
+                    if pct_high > 5:  # Critical if >5% are very high
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {high_prices} values over $200,000 ({pct_high:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {high_prices} values over $200,000"
+                        )
+            
+            # Year checks
+            if col_lower == 'year' or 'year' in col_lower:
+                current_year = pd.Timestamp.now().year
+                future_years = (col_data > current_year + 2).sum()
+                if future_years > 0:
+                    pct_future = (future_years / len(col_data)) * 100
+                    if pct_future > 5:  # Critical if >5% are future years
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {future_years} years more than 2 years in the future ({pct_future:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {future_years} years more than 2 years in the future"
+                        )
+                
+                old_years = (col_data < current_year - 25).sum()
+                if old_years > 0:
+                    pct_old = (old_years / len(col_data)) * 100
+                    if pct_old > 10:  # Warning if >10% are old years
+                        result["warnings"].append(
+                            f"Column '{col}' has {old_years} years more than 25 years old ({pct_old:.1f}%)"
+                        )
+        
+        result["numeric_info"] = numeric_info
+        return result
+    
+    def _check_required_fields(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check that required fields are present
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        
+        # Get column categories
+        categorized_columns = {}
+        for col in df.columns:
+            category = self.mapper.get_field_category(col)
+            if category:
+                if category not in categorized_columns:
+                    categorized_columns[category] = []
+                categorized_columns[category].append(col)
+        
+        result["categorized_columns"] = categorized_columns
+        
+        # Required categories (adjust as needed)
+        required_categories = [
+            "date_fields",
+            "lead_source_fields",
+            "salesperson_fields"
+        ]
+        
+        missing_categories = []
+        for category in required_categories:
+            if category not in categorized_columns or not categorized_columns[category]:
+                missing_categories.append(category)
+                result["valid"] = False
+                result["issues"].append(f"Missing required category: {category.replace('_fields', '')}")
+        
+        if missing_categories:
+            result["missing_categories"] = missing_categories
+        
+        return result
+    
+    def _check_format_consistency(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check for format consistency in string columns
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": []}
+        format_issues = {}
+        
+        # Check string columns
+        string_columns = df.select_dtypes(include=['object']).columns
+        
+        for col in string_columns:
+            col_data = df[col].dropna().astype(str)
+            if len(col_data) < 10:  # Skip columns with very few values
+                continue
+            
+            col_lower = col.lower()
+            
+            # Check email format for email columns
+            if 'email' in col_lower:
+                valid_email_pattern = r'^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}$'
+                invalid_emails = col_data.str.match(valid_email_pattern) == False
+                invalid_count = invalid_emails.sum()
+                
+                if invalid_count > 0:
+                    invalid_pct = (invalid_count / len(col_data)) * 100
+                    format_issues[col] = {
+                        "type": "email",
+                        "invalid_count": int(invalid_count),
+                        "invalid_percentage": float(invalid_pct)
+                    }
+                    
+                    if invalid_pct > 20:  # Critical if >20% are invalid
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {invalid_count} invalid email formats ({invalid_pct:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {invalid_count} invalid email formats ({invalid_pct:.1f}%)"
+                        )
+            
+            # Check phone format for phone columns
+            elif any(term in col_lower for term in ['phone', 'mobile', 'cell']):
+                # Simple check for length and digits
+                invalid_phones = col_data.str.replace(r'\D', '', regex=True).str.len().between(10, 15) == False
+                invalid_count = invalid_phones.sum()
+                
+                if invalid_count > 0:
+                    invalid_pct = (invalid_count / len(col_data)) * 100
+                    format_issues[col] = {
+                        "type": "phone",
+                        "invalid_count": int(invalid_count),
+                        "invalid_percentage": float(invalid_pct)
+                    }
+                    
+                    if invalid_pct > 20:  # Critical if >20% are invalid
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {invalid_count} invalid phone formats ({invalid_pct:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {invalid_count} invalid phone formats ({invalid_pct:.1f}%)"
+                        )
+            
+            # Check VIN format
+            elif any(term in col_lower for term in ['vin']):
+                # Basic VIN validation - 17 chars, no I,O,Q
+                invalid_vins = (
+                    (col_data.str.len() != 17) | 
+                    (col_data.str.contains('[IOQ]')) |
+                    (~col_data.str.match(r'^[A-HJ-NPR-Z0-9]{17}$'))
+                )
+                invalid_count = invalid_vins.sum()
+                
+                if invalid_count > 0:
+                    invalid_pct = (invalid_count / len(col_data)) * 100
+                    format_issues[col] = {
+                        "type": "vin",
+                        "invalid_count": int(invalid_count),
+                        "invalid_percentage": float(invalid_pct)
+                    }
+                    
+                    if invalid_pct > 10:  # Critical if >10% are invalid
+                        result["valid"] = False
+                        result["issues"].append(
+                            f"Column '{col}' has {invalid_count} invalid VIN formats ({invalid_pct:.1f}%)"
+                        )
+                    else:
+                        result["warnings"].append(
+                            f"Column '{col}' has {invalid_count} invalid VIN formats ({invalid_pct:.1f}%)"
+                        )
+        
+        if format_issues:
+            result["format_issues"] = format_issues
+        
+        return result
+    
+    def summary_report(self, validation_results: Dict[str, Any]) -> str:
+        """
+        Generate a human-readable summary report from validation results
+        
+        Args:
+            validation_results: Results from validate() method
+            
+        Returns:
+            Formatted string with validation summary
+        """
+        lines = ["# Data Validation Summary"]
+        
+        # Overall status
+        is_valid = validation_results.get("is_valid", False)
+        status = "✅ PASSED" if is_valid else "❌ FAILED"
+        lines.append(f"\n## Overall Status: {status}\n")
+        
+        # Issues
+        issues = validation_results.get("issues", [])
+        if issues:
+            lines.append("## Critical Issues:")
+            for issue in issues:
+                lines.append(f"- {issue}")
+            lines.append("")
+        
+        # Warnings
+        warnings = validation_results.get("warnings", [])
+        if warnings:
+            lines.append("## Warnings:")
+            for warning in warnings:
+                lines.append(f"- {warning}")
+            lines.append("")
+        
+        # Add details for each check
+        check_results = validation_results.get("check_results", {})
+        if check_results:
+            lines.append("## Check Details:")
+            
+            # Missing values
+            if "missing_values" in check_results:
+                mv_check = check_results["missing_values"]
+                missing_cols = mv_check.get("missing_columns", {})
+                if missing_cols:
+                    lines.append("\n### Missing Values:")
+                    for col, pct in missing_cols.items():
+                        lines.append(f"- {col}: {pct:.1f}%")
+            
+            # Duplicates
+            if "duplicate_rows" in check_results:
+                dup_check = check_results["duplicate_rows"]
+                dup_count = dup_check.get("duplicate_count", 0)
+                if dup_count > 0:
+                    dup_pct = dup_check.get("duplicate_percentage", 0)
+                    lines.append(f"\n### Duplicates: {dup_count} rows ({dup_pct:.1f}%)")
+            
+            # Date ranges
+            if "date_ranges" in check_results:
+                date_check = check_results["date_ranges"]
+                date_info = date_check.get("date_info", {})
+                if date_info:
+                    lines.append("\n### Date Ranges:")
+                    for col, info in date_info.items():
+                        min_date = info.get("min").strftime('%Y-%m-%d')
+                        max_date = info.get("max").strftime('%Y-%m-%d')
+                        range_days = info.get("range_days")
+                        lines.append(f"- {col}: {min_date} to {max_date} ({range_days} days)")
+            
+            # Numeric ranges
+            if "numeric_ranges" in check_results:
+                num_check = check_results["numeric_ranges"]
+                num_info = num_check.get("numeric_info", {})
+                if num_info:
+                    lines.append("\n### Numeric Ranges:")
+                    for col, stats in num_info.items():
+                        lines.append(f"- {col}: min={stats['min']:.2f}, max={stats['max']:.2f}, mean={stats['mean']:.2f}")
+            
+            # Format issues
+            if "format_consistency" in check_results:
+                format_check = check_results["format_consistency"]
+                format_issues = format_check.get("format_issues", {})
+                if format_issues:
+                    lines.append("\n### Format Issues:")
+                    for col, issues in format_issues.items():
+                        lines.append(
+                            f"- {col} ({issues['type']}): {issues['invalid_count']} invalid ({issues['invalid_percentage']:.1f}%)"
+                        )
+            
+            # Data type consistency issues
+            if "data_type_consistency" in check_results:
+                type_check = check_results["data_type_consistency"]
+                type_issues = type_check.get("type_issues", {})
+                if type_issues:
+                    lines.append("\n### Data Type Consistency Issues:")
+                    for col, issues in type_issues.items():
+                        issue_type = issues.get("issue_type", issues.get("expected_type", "mixed"))
+                        
+                        # Format different issue types appropriately
+                        if issue_type == "numeric":
+                            lines.append(f"- {col}: Mixed numeric and string values")
+                            type_counts = issues.get("type_counts", {})
+                            if type_counts:
+                                counts_str = ", ".join([f"{t}: {c}" for t, c in type_counts.items()])
+                                lines.append(f"  Types: {counts_str}")
+                                
+                        elif issue_type == "datetime":
+                            lines.append(f"- {col}: Mixed datetime and string values")
+                            type_counts = issues.get("type_counts", {})
+                            if type_counts:
+                                counts_str = ", ".join([f"{t}: {c}" for t, c in type_counts.items()])
+                                lines.append(f"  Types: {counts_str}")
+                                
+                        elif issue_type == "inconsistent_format":
+                            details = issues.get("details", {})
+                            lines.append(f"- {col}: Inconsistent number formats")
+                            lines.append(f"  With commas: {details.get('with_commas', 0)}, Without commas: {details.get('without_commas', 0)}")
+                            
+                        elif issue_type == "inconsistent_date_format":
+                            format_counts = issues.get("format_counts", {})
+                            lines.append(f"- {col}: Inconsistent date formats")
+                            for fmt, count in format_counts.items():
+                                lines.append(f"  {fmt}: {count}")
+                                
+                        elif issue_type == "mixed_types":
+                            type_counts = issues.get("type_counts", {})
+                            lines.append(f"- {col}: Contains mixed data types")
+                            if type_counts:
+                                counts_str = ", ".join([f"{t}: {c}" for t, c in type_counts.items()])
+                                lines.append(f"  Types: {counts_str}")
+                        
+                        # Show samples for all issue types if available
+                        samples = issues.get("samples", [])
+                        if samples:
+                            sample_str = ", ".join([str(s) for s in samples[:3]])
+                            lines.append(f"  Sample values: {sample_str}")
+        
+        # Add distribution analysis information
+        if "distribution_analysis" in check_results:
+            dist_check = check_results["distribution_analysis"]
+            dist_details = dist_check.get("distribution_details", {})
+            if dist_details:
+                lines.append("\n### Distribution Analysis:")
+                for col, stats in dist_details.items():
+                    # Only show columns with issues
+                    if "possible_issues" in stats and stats["possible_issues"]:
+                        lines.append(f"- {col}:")
+                        
+                        # Show basic stats
+                        lines.append(f"  Min: {stats['min']:.2f}, Max: {stats['max']:.2f}, Mean: {stats['mean']:.2f}, Median: {stats['median']:.2f}")
+                        
+                        # Show outlier information
+                        outlier_count = stats.get("outlier_count", 0)
+                        if outlier_count > 0:
+                            lines.append(f"  Outliers: {outlier_count} ({stats['outlier_percentage']:.1f}%)")
+                            
+                            # List sample outliers if available
+                            if "outlier_samples" in stats:
+                                samples = stats["outlier_samples"]
+                                sample_str = ", ".join([str(s) for s in samples[:3]])
+                                lines.append(f"  Sample outliers: {sample_str}")
+                        
+                        # Show distribution characteristics
+                        if abs(stats.get("skew", 0)) > 1:
+                            skew_type = "positive" if stats["skew"] > 0 else "negative"
+                            lines.append(f"  Skew: {stats['skew']:.2f} ({skew_type})")
+                        
+                        # List possible issues
+                        issues = stats.get("possible_issues", [])
+                        if issues:
+                            issues_str = ", ".join(issues)
+                            lines.append(f"  Possible issues: {issues_str}")
+        
+        return "\n".join(lines)
+    
+    def _check_data_type_consistency(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Check for consistency of data types within columns
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": [], "type_issues": {}}
+        
+        # Loop through all columns
+        for col in df.columns:
+            col_data = df[col].dropna()
+            if len(col_data) == 0:
+                continue
+                
+            # Skip columns that are already numeric or datetime
+            if pd.api.types.is_numeric_dtype(col_data) or pd.api.types.is_datetime64_dtype(col_data):
+                continue
+                
+            # Focus on object (string) columns that might contain mixed types
+            if pd.api.types.is_object_dtype(col_data):
+                type_counts = {}
+                
+                # Check each value's type
+                for val in col_data:
+                    val_type = type(val).__name__
+                    type_counts[val_type] = type_counts.get(val_type, 0) + 1
+                
+                # If more than one type is present, analyze further
+                if len(type_counts) > 1:
+                    total_count = sum(type_counts.values())
+                    
+                    # Calculate percentages
+                    type_percentages = {t: (c / total_count) * 100 for t, c in type_counts.items()}
+                    
+                    # Analyze specific type mixtures
+                    
+                    # Check for columns that should be numeric but have string values
+                    if 'str' in type_counts and ('int' in type_counts or 'float' in type_counts):
+                        # Check if column name suggests it should be numeric
+                        col_lower = col.lower()
+                        numeric_indicators = ['id', 'num', 'count', 'amount', 'price', 'cost', 
+                                             'year', 'age', 'days', 'quantity', 'score']
+                        
+                        if any(ind in col_lower for ind in numeric_indicators):
+                            # Column name suggests numeric but has string values
+                            str_pct = type_percentages.get('str', 0)
+                            
+                            if str_pct > 10:  # Critical if >10% are strings
+                                result["valid"] = False
+                                result["issues"].append(
+                                    f"Column '{col}' appears to be numeric but contains {type_counts.get('str', 0)} " 
+                                    f"string values ({str_pct:.1f}%)"
+                                )
+                            else:
+                                result["warnings"].append(
+                                    f"Column '{col}' appears to be numeric but contains {type_counts.get('str', 0)} "
+                                    f"string values ({str_pct:.1f}%)"
+                                )
+                                
+                            # Store detailed info
+                            result["type_issues"][col] = {
+                                "expected_type": "numeric",
+                                "type_counts": type_counts,
+                                "type_percentages": type_percentages,
+                                "samples": df[col].sample(min(5, len(df))).tolist()
+                            }
+                    
+                    # Check for columns that should be dates but have string values
+                    elif 'str' in type_counts and any(t in type_counts for t in ['datetime', 'Timestamp']):
+                        # Check if column name suggests it should be a date
+                        col_lower = col.lower()
+                        date_indicators = ['date', 'time', 'day', 'month', 'year', 'created', 'updated', 'timestamp']
+                        
+                        if any(ind in col_lower for ind in date_indicators):
+                            # Column name suggests date but has string values
+                            str_pct = type_percentages.get('str', 0)
+                            
+                            if str_pct > 10:  # Critical if >10% are strings
+                                result["valid"] = False
+                                result["issues"].append(
+                                    f"Column '{col}' appears to be datetime but contains {type_counts.get('str', 0)} " 
+                                    f"string values ({str_pct:.1f}%)"
+                                )
+                            else:
+                                result["warnings"].append(
+                                    f"Column '{col}' appears to be datetime but contains {type_counts.get('str', 0)} "
+                                    f"string values ({str_pct:.1f}%)"
+                                )
+                            
+                            # Store detailed info
+                            result["type_issues"][col] = {
+                                "expected_type": "datetime",
+                                "type_counts": type_counts,
+                                "type_percentages": type_percentages,
+                                "samples": df[col].sample(min(5, len(df))).tolist()
+                            }
+                    
+                    # For string columns, check for mixed formats
+                    elif 'str' in type_counts and type_counts.get('str', 0) / total_count > 0.8:
+                        # For string-dominant columns, check for consistent formats
+                        str_values = col_data[col_data.apply(lambda x: isinstance(x, str))]
+                        
+                        # Check for mixed number formats (some with commas, some without)
+                        if col_lower.find('price') >= 0 or col_lower.find('cost') >= 0 or col_lower.find('amount') >= 0:
+                            # Patterns for price formats
+                            comma_format = sum(str_values.str.contains(r'^\$?\d{1,3}(,\d{3})+(\.\d+)?$').fillna(False))
+                            no_comma_format = sum(str_values.str.contains(r'^\$?\d+(\.\d+)?$').fillna(False))
+                            
+                            if comma_format > 0 and no_comma_format > 0:
+                                result["warnings"].append(
+                                    f"Column '{col}' has inconsistent number formats: {comma_format} with commas, "
+                                    f"{no_comma_format} without commas"
+                                )
+                                
+                                # Store detailed info
+                                result["type_issues"][col] = {
+                                    "issue_type": "inconsistent_format",
+                                    "details": {
+                                        "with_commas": comma_format,
+                                        "without_commas": no_comma_format
+                                    },
+                                    "samples": df[col].sample(min(5, len(df))).tolist()
+                                }
+                                
+                        # Check for mixed date formats
+                        elif any(ind in col_lower for ind in ['date', 'time', 'day', 'month', 'year', 'created', 'updated', 'timestamp']):
+                            date_formats = {}
+                            format_patterns = {
+                                'MM/DD/YYYY': r'\d{1,2}/\d{1,2}/\d{4}',
+                                'DD/MM/YYYY': r'\d{1,2}/\d{1,2}/\d{4}',  # Note: overlaps with MM/DD/YYYY
+                                'YYYY-MM-DD': r'\d{4}-\d{1,2}-\d{1,2}',
+                                'MM-DD-YYYY': r'\d{1,2}-\d{1,2}-\d{4}',
+                                'other_format': r'\d{1,2}[^0-9]\d{1,2}[^0-9]\d{2,4}'
+                            }
+                            
+                            for fmt, pattern in format_patterns.items():
+                                format_count = sum(str_values.str.match(pattern).fillna(False))
+                                if format_count > 0:
+                                    date_formats[fmt] = format_count
+                            
+                            if len(date_formats) > 1:
+                                result["warnings"].append(
+                                    f"Column '{col}' has {len(date_formats)} different date formats"
+                                )
+                                
+                                # Store detailed info
+                                result["type_issues"][col] = {
+                                    "issue_type": "inconsistent_date_format",
+                                    "format_counts": date_formats,
+                                    "samples": df[col].sample(min(5, len(df))).tolist()
+                                }
+                    
+                    # For general mixed types not covered above
+                    else:
+                        type_list = ", ".join([f"{t}: {c} ({type_percentages[t]:.1f}%)" for t, c in type_counts.items()])
+                        result["warnings"].append(
+                            f"Column '{col}' contains mixed data types: {type_list}"
+                        )
+                        
+                        # Store detailed info
+                        result["type_issues"][col] = {
+                            "issue_type": "mixed_types",
+                            "type_counts": type_counts,
+                            "type_percentages": type_percentages,
+                            "samples": df[col].sample(min(5, len(df))).tolist()
+                        }
+        
+        return result    
+    def _check_distribution_analysis(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Analyze data distributions to identify outliers and skewed distributions
+        
+        Args:
+            df: DataFrame to check
+            
+        Returns:
+            Dict with check results
+        """
+        result = {"valid": True, "issues": [], "warnings": [], "distribution_details": {}}
+        
+        # Only analyze numeric columns
+        numeric_columns = df.select_dtypes(include=['number']).columns
+        
+        if len(numeric_columns) == 0:
+            return result
+            
+        # Check each numeric column
+        for col in numeric_columns:
+            col_data = df[col].dropna()
+            if len(col_data) < 10:  # Skip columns with too few values
+                continue
+                
+            # Calculate distribution statistics
+            dist_stats = {
+                "count": len(col_data),
+                "mean": float(col_data.mean()),
+                "median": float(col_data.median()),
+                "std": float(col_data.std()),
+                "min": float(col_data.min()),
+                "max": float(col_data.max()),
+                "25%": float(col_data.quantile(0.25)),
+                "75%": float(col_data.quantile(0.75)),
+                "skew": float(col_data.skew()),
+                "kurtosis": float(col_data.kurtosis())
+            }
+            
+            # Calculate IQR for outlier detection
+            q1 = dist_stats["25%"]
+            q3 = dist_stats["75%"]
+            iqr = q3 - q1
+            
+            # Calculate outlier bounds
+            lower_bound = q1 - (1.5 * iqr)
+            upper_bound = q3 + (1.5 * iqr)
+            
+            # Find outliers using IQR method
+            outliers = col_data[(col_data < lower_bound) | (col_data > upper_bound)]
+            outlier_count = len(outliers)
+            outlier_percentage = (outlier_count / len(col_data)) * 100
+            
+            # Calculate Z-scores for another outlier detection method
+            z_scores = (col_data - dist_stats["mean"]) / dist_stats["std"] if dist_stats["std"] > 0 else pd.Series([0] * len(col_data))
+            extreme_outliers = col_data[abs(z_scores) > 3]  # 3 standard deviations
+            extreme_count = len(extreme_outliers)
+            extreme_percentage = (extreme_count / len(col_data)) * 100
+            
+            # Store distribution details
+            dist_stats.update({
+                "iqr": float(iqr),
+                "outlier_count": int(outlier_count),
+                "outlier_percentage": float(outlier_percentage),
+                "extreme_outlier_count": int(extreme_count),
+                "extreme_percentage": float(extreme_percentage),
+                "lower_bound": float(lower_bound),
+                "upper_bound": float(upper_bound)
+            })
+            
+            # Get column category to help with analysis
+            col_category = self.mapper.get_field_category(col)
+            dist_stats["category"] = col_category
+            
+            # Store sample outliers (up to 5)
+            if outlier_count > 0:
+                dist_stats["outlier_samples"] = outliers.sample(min(5, outlier_count)).tolist()
+            
+            # Check for severe skewness
+            skew_value = dist_stats["skew"]
+            high_skew = abs(skew_value) > 2
+            
+            # Check for bimodal or multimodal distribution
+            kurtosis_value = dist_stats["kurtosis"]
+            potential_multimodal = kurtosis_value < -1
+            
+            # Check for high outlier percentage
+            high_outlier_pct = outlier_percentage > 10
+            high_extreme_pct = extreme_percentage > 5
+            
+            # Analyze specific issues based on column category/name
+            col_lower = col.lower()
+            dist_stats["possible_issues"] = []
+                
+            # Store all distribution stats
+            result["distribution_details"][col] = dist_stats
+            
+            # Flag issues for different column types
+            if "price" in col_lower or "cost" in col_lower or "amount" in col_lower:
+                # Price/cost columns with high outliers
+                if high_outlier_pct:
+                    issue = f"Column '{col}' has {outlier_count} price outliers ({outlier_percentage:.1f}%)"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("high_price_variance")
+                    
+                # Extreme price outliers
+                if high_extreme_pct:
+                    issue = f"Column '{col}' has {extreme_count} extreme price outliers ({extreme_percentage:.1f}%)"
+                    result["issues"].append(issue)
+                    result["valid"] = False
+                    dist_stats["possible_issues"].append("extreme_price_outliers")
+                    
+                # Highly skewed price distribution
+                if high_skew:
+                    issue = f"Column '{col}' has a highly skewed price distribution (skew={skew_value:.2f})"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("skewed_price_distribution")
+                    
+            elif "days" in col_lower or "age" in col_lower or "time" in col_lower:
+                # Days/age columns with high outliers
+                if high_outlier_pct:
+                    issue = f"Column '{col}' has {outlier_count} time/age outliers ({outlier_percentage:.1f}%)"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("high_time_variance")
+                    
+                # Extremely skewed time distribution
+                if high_skew and skew_value > 0:  # Positive skew for time often indicates old outliers
+                    issue = f"Column '{col}' has a highly skewed time distribution (skew={skew_value:.2f})"
+                    if extreme_percentage > 2:  # If also have extreme outliers
+                        result["issues"].append(issue)
+                        result["valid"] = False
+                    else:
+                        result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("skewed_time_distribution")
+                    
+            elif "count" in col_lower or "quantity" in col_lower or "number" in col_lower:
+                # Count columns with high outliers
+                if high_outlier_pct:
+                    issue = f"Column '{col}' has {outlier_count} count/quantity outliers ({outlier_percentage:.1f}%)"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("unusual_counts")
+                    
+                # Potential multimodal distribution in counts
+                if potential_multimodal:
+                    issue = f"Column '{col}' may have a multimodal distribution (kurtosis={kurtosis_value:.2f})"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("multimodal_counts")
+                    
+            elif "ratio" in col_lower or "rate" in col_lower or "percentage" in col_lower:
+                # Verify values are within expected range for ratios (0-1 or 0-100)
+                if dist_stats["max"] > 100 and "percentage" in col_lower:
+                    issue = f"Column '{col}' has percentage values > 100 (max={dist_stats['max']:.2f})"
+                    result["issues"].append(issue)
+                    result["valid"] = False
+                    dist_stats["possible_issues"].append("invalid_percentage_range")
+                    
+                elif dist_stats["max"] > 1 and "ratio" in col_lower:
+                    # Check if values might be percentages stored as ratios
+                    if dist_stats["max"] <= 100:
+                        issue = f"Column '{col}' appears to have percentage values but is named as a ratio (max={dist_stats['max']:.2f})"
+                        result["warnings"].append(issue)
+                        dist_stats["possible_issues"].append("percentage_as_ratio")
+                    else:
+                        issue = f"Column '{col}' has ratio values > 1 (max={dist_stats['max']:.2f})"
+                        result["issues"].append(issue)
+                        result["valid"] = False
+                        dist_stats["possible_issues"].append("invalid_ratio_range")
+            else:
+                # General numeric columns
+                if high_extreme_pct:
+                    issue = f"Column '{col}' has {extreme_count} extreme outliers ({extreme_percentage:.1f}%)"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("high_outlier_percentage")
+                
+                # Flag columns with very high skew or unusual distributions
+                if abs(skew_value) > 3:
+                    skew_direction = "positive" if skew_value > 0 else "negative"
+                    issue = f"Column '{col}' has a very {skew_direction} skewed distribution (skew={skew_value:.2f})"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append(f"{skew_direction}_skew")
+                    
+                # Flag potential multimodal distributions
+                if potential_multimodal:
+                    issue = f"Column '{col}' may have a multimodal distribution (kurtosis={kurtosis_value:.2f})"
+                    result["warnings"].append(issue)
+                    dist_stats["possible_issues"].append("potential_multimodal")
+        
+        return result

@@ -1,0 +1,103 @@
+{
+  "field_mappings": {
+    "date_fields": [
+      "created_date",
+      "modified_date",
+      "sale_date",
+      "test_drive_date",
+      "appointment_date"
+    ],
+    "lead_source_fields": [
+      "lead_source",
+      "lead_type",
+      "campaign_name",
+      "referral_source"
+    ],
+    "salesperson_fields": [
+      "salesperson_id",
+      "salesperson_name",
+      "salesperson_email",
+      "salesperson_phone"
+    ],
+    "inventory_fields": [
+      "stock_number",
+      "stock#",
+      "stock_num",
+      "stock_no",
+      "vin",
+      "vin_number",
+      "days_in_stock",
+      "age"
+    ],
+    "vehicle_fields": [
+      "vin",
+      "make",
+      "model",
+      "year",
+      "color",
+      "trim",
+      "stock_number"
+    ],
+    "customer_fields": [
+      "customer_id",
+      "first_name",
+      "last_name",
+      "email",
+      "phone",
+      "address",
+      "city",
+      "state",
+      "zip"
+    ],
+    "pricing_fields": [
+      "price",
+      "msrp",
+      "selling_price",
+      "list_price",
+      "sale_price",
+      "cost",
+      "invoice",
+      "dealer_cost",
+      "profit",
+      "gross",
+      "discount",
+      "incentive"
+    ],
+    "deal_fields": [
+      "deal_id",
+      "deal_status",
+      "deal_type",
+      "gross_profit",
+      "finance_type",
+      "payment_amount",
+      "term_length"
+    ]
+  },
+  "document_templates": {
+    "cdk": {
+      "name": "CDK Dealership System",
+      "key_fields": ["Stock#", "Lead_Source", "SalesRep", "LeadDate"],
+      "description": "Common format from CDK Global dealership management system"
+    },
+    "reynolds": {
+      "name": "Reynolds & Reynolds",
+      "key_fields": ["StockNum", "LeadOrigin", "SalesConsultant", "Date"],
+      "description": "Common format from Reynolds & Reynolds dealership management system"
+    },
+    "dealertrack": {
+      "name": "DealerTrack CRM",
+      "key_fields": ["stock_number", "lead_source", "sales_person", "appointment_date"],
+      "description": "Common format from DealerTrack CRM exports"
+    },
+    "vinsolutions": {
+      "name": "VinSolutions",
+      "key_fields": ["stock#", "source", "assigned_to", "created_date"],
+      "description": "Common format from VinSolutions CRM exports"
+    },
+    "eleads": {
+      "name": "eLead CRM",
+      "key_fields": ["inventory_id", "lead_type", "agent", "date_created"],
+      "description": "Common format from eLead CRM exports"
+    }
+  }
+}
